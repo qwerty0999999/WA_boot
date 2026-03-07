@@ -213,6 +213,12 @@ async function handleMessage(sock, msg) {
             const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=500x500&data=${encodeURIComponent(textArgs)}`;
             await sock.sendMessage(sender, { image: { url: qrUrl }, caption: `Bip bop! QR Code dadi nih!` }, { quoted: msg });
             break;
+        case 'waktu':
+        case 'jam':
+            const now = new Date();
+            const options = { timeZone: 'Asia/Jakarta', weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' };
+            await reply(`⏱️ *Waktu Saat Ini (WIB)*\n\n${now.toLocaleDateString('id-ID', options)}`);
+            break;
 
         // --- UTILS MENUNGGU IMPLEMENTASI ---    
         case 'stiker':
