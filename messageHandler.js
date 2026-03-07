@@ -32,9 +32,7 @@ async function handleMessage(sock, msg) {
         // Prevent bot from replying to its own bot response
         if (fromMe) return;
 
-        // Fallback wait message in case config.messages.wait is undefined on the server
-        const waitMessage = config.messages?.wait || '⏳ Sedang berpikir...';
-        await sock.sendMessage(sender, { text: waitMessage }, { quoted: msg });
+        // Pesan loading dihapus sesuai request
 
         // Persona asik agar AI membalas seperti teman/manusia biasa dan TIDAK BERTELE-TELE
         const personaPrompt = `Kamu adalah teman ngobrol dari Indonesia bernama Choli. Jawablah obrolan berikut dengan ramah dan santai menggunakan bahasa sehari-hari. 
