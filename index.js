@@ -17,8 +17,8 @@ let cronStarted = false;
 
 async function startBot() {
     // Hubungkan ke Supabase jika ada linknya di environment variables
-    const supabaseUrl = process.env.SUPABASE_URL || '';
-    const supabaseKey = process.env.SUPABASE_KEY || '';
+    const supabaseUrl = process.env.SUPABASE_URL || 'https://bptngamrusjzebufwxdl.supabase.co';
+    const supabaseKey = process.env.SUPABASE_KEY || ''; // Kamu BELUM meletakkan Supabase Key di sini
     let state, saveCreds, clearState;
 
     if (supabaseUrl && supabaseKey) {
