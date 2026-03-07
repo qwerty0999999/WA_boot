@@ -18,7 +18,7 @@ let cronStarted = false;
 async function startBot() {
     // Hubungkan ke Supabase jika ada linknya di environment variables
     const supabaseUrl = process.env.SUPABASE_URL || 'https://bptngamrusjzebufwxdl.supabase.co';
-    const supabaseKey = process.env.SUPABASE_KEY || ''; // Kamu BELUM meletakkan Supabase Key di sini
+    const supabaseKey = process.env.SUPABASE_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJwdG5nYW1ydXNqemVidWZ3eGRsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzI4OTUzMTksImV4cCI6MjA4ODQ3MTMxOX0.wOEzMdqF_kbucFp73Lo336yvb5lUkQWFXz8LfMYDcvo';
     let state, saveCreds, clearState;
 
     if (supabaseUrl && supabaseKey) {
