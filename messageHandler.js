@@ -70,7 +70,6 @@ async function handleMessage(sock, msg) {
                 `- ${config.prefix}dev\n\n` +
                 `🎮 *Hiburan*\n` +
                 `- ${config.prefix}stiker (kirim/reply gambar)\n` +
-                `- ${config.prefix}gambar [teks]\n` +
                 `- ${config.prefix}siapa\n` +
                 `- ${config.prefix}truth / ${config.prefix}dare\n` +
                 `- ${config.prefix}confess [nomor] [pesan]\n` +
@@ -115,16 +114,6 @@ async function handleMessage(sock, msg) {
             break;
 
         // --- HIBURAN ---
-        case 'gambar':
-            if (!textArgs) return reply(`Masukkan teks! Contoh: ${config.prefix}gambar kucing main gitar`);
-            await reply(config.messages.wait);
-            try {
-                const imageBuffer = await generateImage(textArgs);
-                await sock.sendMessage(sender, { image: imageBuffer, caption: `🖼️ Hasil AI untuk: ${textArgs}` }, { quoted: msg });
-            } catch (err) {
-                await reply(`❌ Gagal: ${err.message}`);
-            }
-            break;
         case 'halu':
             if (!textArgs) return reply(`Masukkan nama! Contoh: ${config.prefix}halu Budi`);
             await reply(getHaluMeter(textArgs));
