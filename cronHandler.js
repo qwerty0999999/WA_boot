@@ -27,10 +27,10 @@ async function startCronJobs(sock) {
         const timeString = timeNow.format('HH:mm');
         const dateString = timeNow.format('YYYY/MM/DD');
 
-        // 1. Motivasi setiap jam (00 menit) - kecuali jam tidur 00:00 - 05:00
+        // 1. Motivasi 2x sehari (Jam 14:00 siang dan 17:00 sore)
         if (minute === 0 && hour !== lastMotivasiHour) {
             lastMotivasiHour = hour;
-            if (hour > 5) {
+            if (hour === 14 || hour === 17) {
                 try {
                     const AI_prompt = "Berikan satu kalimat motivasi singkat yang sangat acak, lucu, namun penuh semangat untuk para member di grup WhatsApp. Bisa juga diselipi jokes programming/IT. Jawab langsung kalimatnya saja tanpa basa-basi pengantar.";
                     const ai_text = await chatAI(AI_prompt);
