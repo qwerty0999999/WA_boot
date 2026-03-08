@@ -8,7 +8,7 @@ const useSupabaseAuthState = require('./lib/supabaseAuthState');
 const config = require('./config');
 const { handleMessage } = require('./messageHandler');
 const { handleGroupParticipantsUpdate } = require('./groupHandler');
-const { startCronJobs } = require('./cronHandler');
+const { startCronJobs, updateCronSocket } = require('./cronHandler');
 
 // Caching options
 const msgRetryCounterCache = new NodeCache();
@@ -95,6 +95,8 @@ async function startBot() {
             if (!cronStarted) {
                 startCronJobs(sock);
                 cronStarted = true;
+            } else {
+                updateCronSocket(sock);
             }
         }
     });

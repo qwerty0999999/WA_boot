@@ -48,4 +48,4 @@ Projek ini sudah dilengkapi dengan sistem **Health Check (Express)** dan pengatu
 5. Railway akan mendeteksi `nixpacks.toml` milik Anda, menginstal Node.js + FFMPEG, dan bot Anda akan langsung beroperasi.
 
 ---
-*Dibuat dengan ❤️ oleh RF Digital - Universitas Putera Batam*
+*Dibuat dengan ❤️ oleh RF Digital*

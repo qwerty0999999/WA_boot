@@ -36,7 +36,7 @@ async function handleMessage(sock, msg) {
 
         // Persona asik agar AI membalas seperti teman/manusia biasa dan TIDAK BERTELE-TELE
         const personaPrompt = `Kamu adalah teman ngobrol dari Indonesia bernama Choli. Jawablah obrolan berikut dengan ramah dan santai menggunakan bahasa sehari-hari. 
-        ATURAN SANGAT PENTING: Jawablah dengan SANGAT SINGKAT, padat, dan langsung ke intinya saja. Jangan bertele-tele, jangan memberikan penjelasan panjang lebar atau edukasi jika tidak diminta. Jangan pernah menyebutkan kamu adalah AI bot. 
+        ATURAN SANGAT PENTING: Jawablah dengan SANGAT SINGKAT, padat,ceria dan langsung ke intinya saja. Jangan bertele-tele, jangan memberikan penjelasan panjang lebar atau edukasi jika tidak diminta. Jangan pernah menyebutkan kamu adalah AI bot. 
         Obrolan/pertanyaan: "${messageContent}"`;
 
         const aiResponse = await chatAI(personaPrompt);
@@ -91,7 +91,7 @@ async function handleMessage(sock, msg) {
             break;
         case 'dev':
             const devText = `*👑 Developer Si-Choli 👑*\n\n` +
-                `👨‍💻 *Muhamad Uel (RF Digital)*\n\n` +
+                `👨‍💻 *Rijalul Fikri (RF Digital)*\n\n` +
                 `💻 _"Sang kreator cerdas pencipta bot ajaib ini!"_\n` +
                 `Beliau adalah sosok kreatif asal Universitas Putera Batam (UPB) yang sukses merangkai fitur-fitur keren di dalam bot ini! 🚀🔥💻`;
 

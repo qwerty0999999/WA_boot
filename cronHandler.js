@@ -10,11 +10,17 @@ let tanggalJadwal = "";
 let lastSholatSent = "";
 let lastMotivasiHour = -1;
 
+let currentSock = null;
+
 async function startCronJobs(sock) {
+    currentSock = sock; // Update the socket reference
     console.log('[CRON] Auto-prayer & hourly motivation engine started.');
 
     // Run precisely at the top of every minute using node-cron
     cron.schedule('* * * * *', async () => {
+        if (!currentSock) return;
+        const sock = currentSock; // Use the latest socket
+
         const timeNow = moment().tz('Asia/Jakarta');
         const hour = timeNow.hour();
         const minute = timeNow.minute();
@@ -100,5 +106,9 @@ async function startCronJobs(sock) {
     });
 }
 
-module.exports = { startCronJobs };
+function updateCronSocket(sock) {
+    currentSock = sock;
+}
+
+module.exports = { startCronJobs, updateCronSocket };
 
