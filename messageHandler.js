@@ -228,9 +228,11 @@ async function handleMessage(sock, msg) {
         case 'gambar':
             if (!textArgs) return reply(`Masukkan deskripsi gambar! Contoh: ${config.prefix}gambar robot kucing minum kopi`);
             await reply(config.messages.wait);
-            const imageUrl = generateImage(textArgs);
+            const imageBuffer = await generateImage(textArgs);
+            if (!imageBuffer) return reply('❌ Gagal membuat gambar. Server AI sedang sibuk atau error.');
+
             await sock.sendMessage(sender, {
-                image: { url: imageUrl },
+                image: imageBuffer,
                 caption: `Bip bop! 🎨 Gambar berhasil dibuat untuk: ${textArgs}`
             }, { quoted: msg });
             break;
