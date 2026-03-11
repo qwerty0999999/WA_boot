@@ -1,9 +1,10 @@
 const { downloadMediaMessage } = require('@whiskeysockets/baileys');
 const config = require('./config');
-const { generateImage, chatAI, getWeather, getRandomQuote } = require('./lib/api');
+const { generateImage, chatAI, getWeather, getRandomQuote, getTTSUrl } = require('./lib/api');
 const { getHaluMeter, getCekJodoh, getRandomTruth, getRandomDare, getZodiac } = require('./lib/games');
 const { getPrayerTimes, getItDictionary, getRecipe } = require('./lib/utilities');
 const { startTebak, checkTebak } = require('./lib/trivia');
+const { downloadTikTok, downloadIG } = require('./lib/downloader');
 
 const absensi = {};
 
@@ -86,7 +87,12 @@ async function handleMessage(sock, msg) {
                 `- ${config.prefix}absen / ${config.prefix}resetabsen\n` +
                 `- ${config.prefix}ingatkan [menit] [pesan]\n` +
                 `- ${config.prefix}masak [bahan]\n` +
-                `- ${config.prefix}cuaca\n`;
+                `- ${config.prefix}cuaca\n\n` +
+                `🚀 *Fitur Baru!*\n` +
+                `- ${config.prefix}tiktok [link]\n` +
+                `- ${config.prefix}ig [link]\n` +
+                `- ${config.prefix}tts [teks]\n` +
+                `- ${config.prefix}gambar [deskripsi]\n`;
             await reply(menuText);
             break;
         case 'dev':
@@ -205,6 +211,56 @@ async function handleMessage(sock, msg) {
             const now = new Date();
             const options = { timeZone: 'Asia/Jakarta', weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' };
             await reply(`⏱️ *Waktu Saat Ini (WIB)*\n\n${now.toLocaleDateString('id-ID', options)}`);
+            break;
+
+        // --- FITUR BARU ---
+        case 'tts':
+            if (!textArgs) return reply(`Masukkan teksnya! Contoh: ${config.prefix}tts Halo semua`);
+            const audioUrl = getTTSUrl(textArgs);
+            if (!audioUrl) return reply('❌ Gagal membuat suara (TTS).');
+            await sock.sendMessage(sender, {
+                audio: { url: audioUrl },
+                mimetype: 'audio/mp4',
+                ptt: true // Kirim sebagai Voice Note
+            }, { quoted: msg });
+            break;
+
+        case 'gambar':
+            if (!textArgs) return reply(`Masukkan deskripsi gambar! Contoh: ${config.prefix}gambar robot kucing minum kopi`);
+            await reply(config.messages.wait);
+            const imageUrl = generateImage(textArgs);
+            await sock.sendMessage(sender, {
+                image: { url: imageUrl },
+                caption: `Bip bop! 🎨 Gambar berhasil dibuat untuk: ${textArgs}`
+            }, { quoted: msg });
+            break;
+
+        case 'tiktok':
+        case 'tt':
+            if (!textArgs || !textArgs.includes('tiktok')) return reply(`Kirim link TikTok! Contoh: ${config.prefix}tiktok https://vt.tiktok.com/...`);
+            await reply(config.messages.wait);
+            const ttData = await downloadTikTok(textArgs);
+            if (!ttData || !ttData.videoUrl) return reply('❌ Gagal mendownload TikTok. Link mungkin private atau server sibuk.');
+            await sock.sendMessage(sender, {
+                video: { url: ttData.videoUrl },
+                caption: `🎵 *TikTok Downloader*\n\nJudul: ${ttData.title || '-'}`
+            }, { quoted: msg });
+            break;
+
+        case 'ig':
+        case 'instagram':
+            if (!textArgs || !textArgs.includes('instagram.com')) return reply(`Kirim link Instagram! Contoh: ${config.prefix}ig https://www.instagram.com/p/...`);
+            await reply(config.messages.wait);
+            const igData = await downloadIG(textArgs);
+            if (!igData || igData.length === 0) return reply('❌ Gagal mendownload IG. Pastikan akun tidak diprivate atau URL valid.');
+
+            for (const mediaUrl of igData) {
+                if (mediaUrl.includes('.mp4') || mediaUrl.includes('video')) {
+                    await sock.sendMessage(sender, { video: { url: mediaUrl } }, { quoted: msg });
+                } else {
+                    await sock.sendMessage(sender, { image: { url: mediaUrl } }, { quoted: msg });
+                }
+            }
             break;
 
         // --- UTILS MENUNGGU IMPLEMENTASI ---    
