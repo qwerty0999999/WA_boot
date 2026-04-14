@@ -9,29 +9,26 @@ const config = require('./config');
 const { handleMessage } = require('./messageHandler');
 const { handleGroupParticipantsUpdate } = require('./groupHandler');
 const { startCronJobs, updateCronSocket } = require('./cronHandler');
+const logger = require('./lib/logger');
 
 // Caching options
 const msgRetryCounterCache = new NodeCache();
 
 let cronStarted = false;
 
+const supabase = require('./lib/supabaseClient');
+
 async function startBot() {
-    // Hubungkan ke Supabase jika ada linknya di environment variables
-    const supabaseUrl = process.env.SUPABASE_URL || 'https://bptngamrusjzebufwxdl.supabase.co';
-    const supabaseKey = process.env.SUPABASE_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJwdG5nYW1ydXNqemVidWZ3eGRsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzI4OTUzMTksImV4cCI6MjA4ODQ3MTMxOX0.wOEzMdqF_kbucFp73Lo336yvb5lUkQWFXz8LfMYDcvo';
     let state, saveCreds, clearState;
 
-    if (supabaseUrl && supabaseKey) {
-        console.log('Menghubungkan ke Supabase...');
-        const supabase = createClient(supabaseUrl, supabaseKey);
-        console.log('Berhasil terhubung ke Supabase!');
-
+    if (supabase) {
+        logger.info('Menghubungkan ke Supabase (via client shared)...');
         const authInfo = await useSupabaseAuthState(supabase, 'whatsapp_sessions');
         state = authInfo.state;
         saveCreds = authInfo.saveCreds;
         clearState = authInfo.clearState;
     } else {
-        console.log('Supabase URI/Key tidak ditemukan, menggunakan auto-save lokal (auth_info_baileys)...');
+        logger.warn('Supabase URI/Key tidak ditemukan, menggunakan auto-save lokal (auth_info_baileys)...');
         const { useMultiFileAuthState } = require('@whiskeysockets/baileys');
         const authInfo = await useMultiFileAuthState(config.sessionsDir);
         state = authInfo.state;
@@ -40,17 +37,17 @@ async function startBot() {
         clearState = async () => {
             if (fs.existsSync(config.sessionsDir)) {
                 fs.rmSync(config.sessionsDir, { recursive: true, force: true });
-                console.log('[Local] Folder session lama berhasil dihapus.');
+                logger.info('[Local] Folder session lama berhasil dihapus.');
             }
         };
     }
 
     const { version, isLatest } = await fetchLatestBaileysVersion();
-    console.log(`using WA v${version.join('.')}, isLatest: ${isLatest}`);
+    logger.info(`using WA v${version.join('.')}, isLatest: ${isLatest}`);
 
     const sock = makeWASocket({
         version,
-        logger: pino({ level: 'silent' }), // Set to info or debug for more verbose logging
+        logger: pino({ level: 'silent' }), // Still silences Baileys logs to keep terminal clean
         auth: state,
         msgRetryCounterCache,
         generateHighQualityLinkPreview: false, // Disabled due to a bug in Baileys that crashes on regex match when reading undefined messages
@@ -69,6 +66,7 @@ async function startBot() {
         const { connection, lastDisconnect, qr } = update;
 
         if (qr) {
+            logger.info('QR Code received. Scan now!');
             console.log('\n======================================================');
             console.log('⚡ KLIK LINK INI UNTUK SCAN QR CODE (LEBIH JELAS) ⚡');
             console.log(`https://api.qrserver.com/v1/create-qr-code/?size=500x500&data=${encodeURIComponent(qr)}`);
@@ -79,19 +77,20 @@ async function startBot() {
 
         if (connection === 'close') {
             const shouldReconnect = lastDisconnect.error?.output?.statusCode !== DisconnectReason.loggedOut;
-            console.log('Connection closed due to ', lastDisconnect.error, ', reconnecting ', shouldReconnect);
+            logger.error(`Connection closed due to ${lastDisconnect.error}. Reconnecting: ${shouldReconnect}`);
             // reconnect if not logged out
             if (shouldReconnect) {
-                startBot();
+                logger.info('Reconnecting in 5 seconds...');
+                setTimeout(() => startBot(), 5000);
             } else {
-                console.log('Sesi tidak valid / logged out. Menghapus sesi lama dan merestart...');
+                logger.warn('Sesi tidak valid / logged out. Menghapus sesi lama dan merestart dalam 3 detik...');
                 if (clearState) {
                     await clearState();
                 }
-                startBot();
+                setTimeout(() => startBot(), 3000);
             }
         } else if (connection === 'open') {
-            console.log('Connected to WhatsApp! Bot is ready.');
+            logger.info('Connected to WhatsApp! Bot is ready.');
             if (!cronStarted) {
                 startCronJobs(sock);
                 cronStarted = true;
@@ -109,13 +108,13 @@ async function startBot() {
         // Log incoming messages for debugging
         const messageContent = msg.message.conversation || msg.message.extendedTextMessage?.text || msg.message.imageMessage?.caption || "";
         if (messageContent && !msg.key.fromMe) {
-            console.log(`[Pesan Masuk] Dari: ${msg.key.remoteJid} -> ${messageContent}`);
+            logger.info(`[Pesan Masuk] Dari: ${msg.key.remoteJid} -> ${messageContent}`);
         }
 
         try {
             await handleMessage(sock, msg);
         } catch (error) {
-            console.error('Error handling message:', error);
+            logger.error('Error handling message:', error);
             // Auto Report to Owner
             try {
                 const ownerJid = config.ownerNumber + '@s.whatsapp.net';
@@ -127,7 +126,7 @@ async function startBot() {
 
                 await sock.sendMessage(ownerJid, { text: errorReport });
             } catch (err) {
-                console.error("Gagal mengirim laporan error ke owner:", err);
+                logger.error("Gagal mengirim laporan error ke owner:", err);
             }
         }
     });
@@ -136,7 +135,7 @@ async function startBot() {
         try {
             await handleGroupParticipantsUpdate(sock, update);
         } catch (error) {
-            console.error('Error handling group participants update:', error);
+            logger.error('Error handling group participants update:', error);
         }
     });
 
@@ -153,6 +152,6 @@ app.get('/', (req, res) => {
 });
 
 app.listen(port, () => {
-    console.log(`[SYS] Health Check Web Server running on port ${port}`);
+    logger.info(`[SYS] Health Check Web Server running on port ${port}`);
     startBot();
 });

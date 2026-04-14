@@ -5,8 +5,69 @@ const { getHaluMeter, getCekJodoh, getRandomTruth, getRandomDare, getZodiac } = 
 const { getPrayerTimes, getItDictionary, getRecipe } = require('./lib/utilities');
 const { startTebak, checkTebak } = require('./lib/trivia');
 const { downloadTikTok, downloadIG } = require('./lib/downloader');
+const supabase = require('./lib/supabaseClient');
 
 const absensi = {};
+const confessLimit = new Map();
+
+/**
+ * Helper to get attendance list
+ */
+async function getAbsensi(groupId) {
+    if (supabase) {
+        try {
+            const { data, error } = await supabase
+                .from('absensi')
+                .select('participant_jid')
+                .eq('group_id', groupId);
+            if (!error && data) return data.map(d => d.participant_jid);
+        } catch (e) {
+            console.error('Supabase error in getAbsensi:', e.message);
+        }
+    }
+    return absensi[groupId] || [];
+}
+
+/**
+ * Helper to add attendance
+ */
+async function addAbsensi(groupId, participantJid) {
+    if (supabase) {
+        try {
+            const { error } = await supabase
+                .from('absensi')
+                .upsert({ group_id: groupId, participant_jid: participantJid }, { onConflict: 'group_id,participant_jid' });
+            if (!error) return true;
+        } catch (e) {
+            console.error('Supabase error in addAbsensi:', e.message);
+        }
+    }
+    if (!absensi[groupId]) absensi[groupId] = [];
+    if (!absensi[groupId].includes(participantJid)) {
+        absensi[groupId].push(participantJid);
+        return true;
+    }
+    return false;
+}
+
+/**
+ * Helper to reset attendance
+ */
+async function resetAbsensi(groupId) {
+    if (supabase) {
+        try {
+            const { error } = await supabase
+                .from('absensi')
+                .delete()
+                .eq('group_id', groupId);
+            if (!error) return true;
+        } catch (e) {
+            console.error('Supabase error in resetAbsensi:', e.message);
+        }
+    }
+    absensi[groupId] = [];
+    return true;
+}
 
 async function handleMessage(sock, msg) {
     // Add default empty string OR '' to prevent undefined from optional chaining
@@ -18,6 +79,15 @@ async function handleMessage(sock, msg) {
     // Prevent infinite loop from bot's own response
     if (fromMe && !messageContent.startsWith(config.prefix)) {
         return;
+    }
+
+    // Helper functions for group info
+    let groupMetadata, participants, isAdmin, isBotAdmin;
+    if (isGroup) {
+        groupMetadata = await sock.groupMetadata(sender);
+        participants = groupMetadata.participants;
+        isAdmin = participants.find(p => p.id === msg.key.participant)?.admin !== null;
+        isBotAdmin = participants.find(p => p.id === sock.user.id.split(':')[0] + '@s.whatsapp.net')?.admin !== null;
     }
 
     // Check auto-responses first
@@ -107,15 +177,15 @@ async function handleMessage(sock, msg) {
         // --- GRUP & SECURITY ---
         case 'everyone':
             if (!isGroup) return reply(config.messages.groupOnly);
-            const groupMetadata = await sock.groupMetadata(sender);
-            const participants = groupMetadata.participants.map(p => p.id);
-            await sock.sendMessage(sender, { text: "📢 *PERHATIAN SEMUANYA!!*\n\nTag All by Si-Choli!", mentions: participants }, { quoted: msg });
+            if (!isAdmin) return reply("❌ Perintah ini hanya untuk admin grup!");
+            const participantsJids = participants.map(p => p.id);
+            await sock.sendMessage(sender, { text: "📢 *PERHATIAN SEMUANYA!!*\n\nTag All by Si-Choli!", mentions: participantsJids }, { quoted: msg });
             break;
         case 'hidetag':
             if (!isGroup) return reply(config.messages.groupOnly);
+            if (!isAdmin) return reply("❌ Perintah ini hanya untuk admin grup!");
             if (!textArgs) return reply(`Masukkan pesan! Contoh: ${config.prefix}hidetag Woy ngopi`);
-            const metadata = await sock.groupMetadata(sender);
-            const mems = metadata.participants.map(p => p.id);
+            const mems = participants.map(p => p.id);
             await sock.sendMessage(sender, { text: textArgs, mentions: mems });
             break;
 
@@ -183,19 +253,24 @@ async function handleMessage(sock, msg) {
             break;
         case 'absen':
             if (!isGroup) return reply(config.messages.groupOnly);
-            if (!absensi[sender]) absensi[sender] = [];
             const absenParticipant = msg.key.participant;
-            if (absensi[sender].includes(absenParticipant)) {
+            const currentAbsen = await getAbsensi(sender);
+            
+            if (currentAbsen.includes(absenParticipant)) {
                 return reply("Bro, kamu sudah absen!");
             }
-            absensi[sender].push(absenParticipant);
+            
+            await addAbsensi(sender, absenParticipant);
+            const updatedAbsen = await getAbsensi(sender);
+            
             let txtAbsen = `*Daftar Hadir Grup* 📋\n\n`;
-            absensi[sender].forEach((p, i) => txtAbsen += `${i + 1}. @${p.split('@')[0]}\n`);
-            await sock.sendMessage(sender, { text: txtAbsen, mentions: absensi[sender] }, { quoted: msg });
+            updatedAbsen.forEach((p, i) => txtAbsen += `${i + 1}. @${p.split('@')[0]}\n`);
+            await sock.sendMessage(sender, { text: txtAbsen, mentions: updatedAbsen }, { quoted: msg });
             break;
         case 'resetabsen':
             if (!isGroup) return reply(config.messages.groupOnly);
-            absensi[sender] = [];
+            if (!isAdmin) return reply("❌ Perintah ini hanya untuk admin grup!");
+            await resetAbsensi(sender);
             await reply("DAFTAR ABSEN BERHASIL DIRESET! 🗑️");
             break;
         case 'jadwal':
@@ -307,6 +382,15 @@ async function handleMessage(sock, msg) {
             break;
         case 'confess':
             if (args.length < 2) return reply(`Gunakan format: ${config.prefix}confess [nomor tujuan] [pesan]\nContoh: ${config.prefix}confess 628123... Halo aku suka kamu`);
+            
+            // Rate Limiting
+            const lastUsed = confessLimit.get(msg.key.participant || sender);
+            const nowTime = Date.now();
+            if (lastUsed && nowTime - lastUsed < 60000) {
+                return reply(`⚠️ Sabar bro! Kamu baru saja mengirim confess. Tunggu ${Math.ceil((60000 - (nowTime - lastUsed)) / 1000)} detik lagi.`);
+            }
+            confessLimit.set(msg.key.participant || sender, nowTime);
+
             const targetNum = args.shift();
             const confessMsg = args.join(" ");
             const targetJid = `${targetNum.replace(/[^0-9]/g, '')}@s.whatsapp.net`;
