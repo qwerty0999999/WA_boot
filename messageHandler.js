@@ -131,9 +131,9 @@ async function handleMessage(sock, msg) {
         const isOwner = sender.startsWith(config.ownerNumber) || sender === config.ownerJid;
         const userJid = msg.key.participant || sender; // Ambil JID asli pengirim
 
-        const personaPrompt = isOwner 
+        const personaPrompt = isOwner
             ? `Ini Abang Rijal (ABG) tersayang Fika. Fika seneng banget Abang chat. Jawab dengan penuh perasaan, manja, cerdas, dan panggil Sayang/ABG. Obrolan: "${messageContent}"`
-            : `Ini Kawan yang nge-chat. Jawab dengan tegas, pintar, berwawasan, tapi jangan terlalu ramah. Obrolan: "${messageContent}"`;
+            : `Ini Kawan yang nge-chat. Jawab dengan tegas, pintar, berwawasan,ramah, dan sopan. Obrolan: "${messageContent}"`;
 
         const aiResponse = await chatAI(personaPrompt, isOwner, userJid);
         await sock.sendMessage(sender, { text: aiResponse }, { quoted: msg });
@@ -160,28 +160,28 @@ async function handleMessage(sock, msg) {
     // Basic routing
     switch (command) {
         case 'menu':
-            const menuText = isOwner 
+            const menuText = isOwner
                 ? `Halo Abang Rijal Sayang! 😍\nNeng Fika siap bantu semua keperluan Abang hari ini:\n\n` +
-                  `🛡️ *Grup*\n` +
-                  `- ${config.prefix}everyone (Tag semua orang)\n` +
-                  `- ${config.prefix}hidetag [pesan]\n\n` +
-                  `🎮 *Hiburan*\n` +
-                  `- ${config.prefix}stiker\n` +
-                  `- ${config.prefix}truth / ${config.prefix}dare\n\n` +
-                  `🚀 *Lainnya*\n` +
-                  `- ${config.prefix}tiktok / ${config.prefix}ig\n\n` +
-                  `Apa pun buat Abang, Fika lakuin deh! 😘`
+                `🛡️ *Grup*\n` +
+                `- ${config.prefix}everyone (Tag semua orang)\n` +
+                `- ${config.prefix}hidetag [pesan]\n\n` +
+                `🎮 *Hiburan*\n` +
+                `- ${config.prefix}stiker\n` +
+                `- ${config.prefix}truth / ${config.prefix}dare\n\n` +
+                `🚀 *Lainnya*\n` +
+                `- ${config.prefix}tiktok / ${config.prefix}ig\n\n` +
+                `Apa pun buat Abang, Fika lakuin deh! 😘`
                 : `Daftar perintah Neng Fika:\n\n` +
-                  `🛡️ *Grup*\n` +
-                  `- ${config.prefix}everyone\n` +
-                  `- ${config.prefix}hidetag\n\n` +
-                  `🎮 *Hiburan*\n` +
-                  `- ${config.prefix}stiker\n\n` +
-                  `Ketik perintah dengan benar.`;
+                `🛡️ *Grup*\n` +
+                `- ${config.prefix}everyone\n` +
+                `- ${config.prefix}hidetag\n\n` +
+                `🎮 *Hiburan*\n` +
+                `- ${config.prefix}stiker\n\n` +
+                `Ketik perintah dengan benar.`;
             await reply(menuText);
             break;
         case 'dev':
-            const devText = isOwner 
+            const devText = isOwner
                 ? `Ih Abang nanya terus, kan Abang Rijal itu satu-satunya orang hebat yang nyiptain Neng Fika. Sayang banget sama ABG! 💖`
                 : `Pencipta aku itu *Rijalul Fikri (RF Digital)*. Beliau programmer jenius, jangan berani ganggu ya!`;
             await reply(devText);
@@ -268,14 +268,14 @@ async function handleMessage(sock, msg) {
             if (!isGroup) return reply(config.messages.groupOnly);
             const absenParticipant = msg.key.participant;
             const currentAbsen = await getAbsensi(sender);
-            
+
             if (currentAbsen.includes(absenParticipant)) {
                 return reply("Kamu kan udah absen tadi!");
             }
-            
+
             await addAbsensi(sender, absenParticipant);
             const updatedAbsen = await getAbsensi(sender);
-            
+
             let txtAbsen = `Daftar orang yang udah hadir:\n\n`;
             updatedAbsen.forEach((p, i) => txtAbsen += `${i + 1}. @${p.split('@')[0]}\n`);
             await sock.sendMessage(sender, { text: txtAbsen, mentions: updatedAbsen }, { quoted: msg });
@@ -393,7 +393,7 @@ async function handleMessage(sock, msg) {
             break;
         case 'confess':
             if (args.length < 2) return reply(`Caranya: ${config.prefix}confess [nomor] [pesan]. Misal: ${config.prefix}confess 628xxx Halo sayang`);
-            
+
             // Rate Limiting
             const lastUsed = confessLimit.get(msg.key.participant || sender);
             const nowTime = Date.now();
