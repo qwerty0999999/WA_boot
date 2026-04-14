@@ -2,6 +2,7 @@ const moment = require('moment-timezone');
 const cron = require('node-cron');
 const axios = require('axios');
 const { chatAI } = require('./lib/api');
+const config = require('./config');
 
 const delay = ms => new Promise(res => setTimeout(res, ms));
 
@@ -14,12 +15,12 @@ let currentSock = null;
 
 async function startCronJobs(sock) {
     currentSock = sock; // Update the socket reference
-    console.log('[CRON] Auto-prayer & hourly motivation engine started.');
+    console.log('[CRON] Sistem Pengingat Sholat & Motivasi Neng Fika Aktif!');
 
-    // Run precisely at the top of every minute using node-cron
+    // Cek setiap menit
     cron.schedule('* * * * *', async () => {
         if (!currentSock) return;
-        const sock = currentSock; // Use the latest socket
+        const sock = currentSock;
 
         const timeNow = moment().tz('Asia/Jakarta');
         const hour = timeNow.hour();
@@ -27,30 +28,27 @@ async function startCronJobs(sock) {
         const timeString = timeNow.format('HH:mm');
         const dateString = timeNow.format('YYYY/MM/DD');
 
-        // 1. Motivasi 2x sehari (Jam 14:00 siang dan 17:00 sore)
+        // 1. Motivasi Otomatis (Jam 09:00 pagi dan 16:00 sore)
         if (minute === 0 && hour !== lastMotivasiHour) {
             lastMotivasiHour = hour;
-            if (hour === 14 || hour === 17) {
+            if (hour === 9 || hour === 16) {
                 try {
-                    const AI_prompt = "Berikan satu kalimat motivasi singkat yang sangat acak, lucu, namun penuh semangat untuk para member di grup WhatsApp. Bisa juga diselipi jokes programming/IT. Jawab langsung kalimatnya saja tanpa basa-basi pengantar.";
+                    const AI_prompt = "Berikan satu kalimat penyemangat hari yang singkat, asik, dan ceria buat temen-temen di grup WhatsApp. Pake bahasa gaul Indonesia yang sopan. Langsung kalimatnya aja ya.";
                     const ai_text = await chatAI(AI_prompt);
-                    const pesan_motivasi = `✨ *Motivasi Jam ${hour.toString().padStart(2, '0')}:00* ✨\n\n${ai_text}`;
+                    const pesan_motivasi = `✨ *Semangat ${hour < 12 ? 'Pagi' : 'Sore'} dari Neng Fika!* ✨\n\n"${ai_text}"\n\nSemangat terus ya semuanya! 🚀`;
 
                     const groups = await sock.groupFetchAllParticipating();
-                    let count = 0;
                     for (const groupId in groups) {
                         await sock.sendMessage(groupId, { text: pesan_motivasi });
-                        await delay(1500);
-                        count++;
+                        await delay(2000);
                     }
-                    console.log(`[CRON] Motivasi AI berhasil dikirim ke ${count} grup.`);
                 } catch (err) {
-                    console.error('[CRON Error] Gagal generate & ngirim motivasi AI:', err);
+                    console.error('[CRON Error] Gagal kirim motivasi:', err);
                 }
             }
         }
 
-        // 2. Persiapan & Fetch Jadwal Sholat Dinamis
+        // 2. Fetch Jadwal Sholat Harian
         if (dateString !== tanggalJadwal) {
             try {
                 const now = moment().tz('Asia/Jakarta');
@@ -70,46 +68,45 @@ async function startCronJobs(sock) {
                     if (todayData) {
                         jadwalHariIni = todayData;
                         tanggalJadwal = dateString;
-                        console.log(`[CRON] Berhasil fetch jadwal sholat EQuran.id untuk ${dateString}`);
+                        console.log(`[CRON] Update jadwal sholat Batam untuk ${dateString}`);
                     }
                 }
             } catch (err) {
-                console.error('[CRON Error] Gagal fetch jadwal sholat dari EQuran.id:', err.message);
+                console.error('[CRON Error] Gagal fetch jadwal sholat:', err.message);
             }
         }
 
-        // 3. Cek pengingat waktu sholat (HH:MM)
+        // 3. Cek Waktu Sholat
         if (jadwalHariIni && Object.keys(jadwalHariIni).length > 0) {
             const daftarWaktu = {
-                "Imsak (Persiapan Puasa)": jadwalHariIni.imsak,
                 "Subuh": jadwalHariIni.subuh,
                 "Dzuhur": jadwalHariIni.dzuhur,
                 "Ashar": jadwalHariIni.ashar,
-                "Maghrib (Buka Puasa)": jadwalHariIni.maghrib,
+                "Maghrib": jadwalHariIni.maghrib,
                 "Isya": jadwalHariIni.isya
             };
 
             for (const [namaWaktu, jam] of Object.entries(daftarWaktu)) {
                 if (timeString === jam && jam !== lastSholatSent) {
                     lastSholatSent = jam;
-                    let pesanSholat = `🕌 *PENGINGAT WAKTU*\n\nTelah masuk waktu ${namaWaktu} untuk wilayah Batam dan sekitarnya.\nMari siapkan diri Anda!`;
+                    
+                    // Pesan Umum untuk Grup
+                    const pesanGrup = `🕌 *PANGGILAN IBADAH*\n\nSudah masuk waktu *${namaWaktu}* untuk wilayah Batam dan sekitarnya (Jam ${jam} WIB).\n\nYuk istirahat sebentar, kita tunaikan sholat dulu ya gaes! ✨`;
 
-                    // Custom message untuk Maghrib
-                    if (namaWaktu.includes("Maghrib")) {
-                        pesanSholat = `🕌 *Waktunya Sholat Maghrib & Selamat Berbuka Puasa!* 🕌\n\nUntuk wilayah Batam dan sekitarnya (Jam ${jam} WIB).\nSelamat menikmati hidangan berbuka bagi yang menjalankan puasa! 🍽️ Jangan lupa sholat Maghrib ya!`;
-                    }
+                    // Pesan Spesial buat Abang Rijal (Owner)
+                    const ownerJid = config.ownerNumber + '@s.whatsapp.net';
+                    const pesanOwner = `Sayangku ABG Rijal... 😍\nSudah masuk waktu *${namaWaktu}* nih. Jangan terlalu asik kerja ya, rehat sebentar buat sholat dulu. Neng tungguin nih! 😘💖`;
 
                     try {
                         const groups = await sock.groupFetchAllParticipating();
-                        let count = 0;
                         for (const groupId in groups) {
-                            await sock.sendMessage(groupId, { text: pesanSholat });
-                            await delay(1500);
-                            count++;
+                            await sock.sendMessage(groupId, { text: pesanGrup });
+                            await delay(2000);
                         }
-                        console.log(`[CRON] Notifikasi sholat ${namaWaktu} dikirim ke ${count} grup.`);
+                        // Kirim ke Abang juga
+                        await sock.sendMessage(ownerJid, { text: pesanOwner });
                     } catch (err) {
-                        console.error('[CRON Error] Gagal ngirim notifikasi sholat:', err);
+                        console.error('[CRON Error] Gagal kirim notif sholat:', err);
                     }
                 }
             }
@@ -124,4 +121,3 @@ function updateCronSocket(sock) {
 }
 
 module.exports = { startCronJobs, updateCronSocket };
-

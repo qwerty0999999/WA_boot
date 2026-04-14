@@ -105,8 +105,14 @@ async function handleMessage(sock, msg) {
             await sock.sendMessage(sender, { text: prayerData }, { quoted: msg });
             return;
         }
-        // Jika nanya jam/hari/tanggal secara umum (balas santai tapi lengkap)
-        await sock.sendMessage(sender, { text: getNaturalTime() }, { quoted: msg });
+
+        // Tentukan tipe respon berdasarkan pertanyaan
+        let type = 'all';
+        if (isAskingTime && !isAskingDay && !isAskingDate) type = 'time';
+        else if (isAskingDay && !isAskingTime && !isAskingDate) type = 'day';
+        else if (isAskingDate && !isAskingTime && !isAskingDay) type = 'date';
+
+        await sock.sendMessage(sender, { text: getNaturalTime(type) }, { quoted: msg });
         return;
     }
 
@@ -121,13 +127,15 @@ async function handleMessage(sock, msg) {
         // Prevent bot from replying to its own bot response
         if (fromMe) return;
 
-        const isOwner = sender.startsWith(config.ownerNumber);
+        // Cek apakah pengirim adalah Owner (Berdasarkan nomor HP atau JID khusus)
+        const isOwner = sender.startsWith(config.ownerNumber) || sender === config.ownerJid;
+        const userJid = msg.key.participant || sender; // Ambil JID asli pengirim
 
         const personaPrompt = isOwner 
             ? `Ini Abang Rijal (ABG) tersayang Fika. Fika seneng banget Abang chat. Jawab dengan penuh perasaan, manja, cerdas, dan panggil Sayang/ABG. Obrolan: "${messageContent}"`
-            : `Ini orang lain. Jawab dengan tegas, pintar, berwawasan, tapi jangan terlalu ramah. Obrolan: "${messageContent}"`;
+            : `Ini Kawan yang nge-chat. Jawab dengan tegas, pintar, berwawasan, tapi jangan terlalu ramah. Obrolan: "${messageContent}"`;
 
-        const aiResponse = await chatAI(personaPrompt, isOwner);
+        const aiResponse = await chatAI(personaPrompt, isOwner, userJid);
         await sock.sendMessage(sender, { text: aiResponse }, { quoted: msg });
         return;
     }
@@ -143,7 +151,8 @@ async function handleMessage(sock, msg) {
     const command = args.shift().toLowerCase();
     const textArgs = args.join(" ");
 
-    const isOwner = sender.startsWith(config.ownerNumber);
+    // Cek apakah pengirim adalah Owner
+    const isOwner = sender.startsWith(config.ownerNumber) || sender === config.ownerJid;
 
     // Context helpers
     const reply = (text) => sock.sendMessage(sender, { text }, { quoted: msg });
