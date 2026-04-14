@@ -2,7 +2,7 @@ const { downloadMediaMessage } = require('@whiskeysockets/baileys');
 const config = require('./config');
 const { generateImage, chatAI, getWeather, getRandomQuote, getTTSUrl } = require('./lib/api');
 const { getHaluMeter, getCekJodoh, getRandomTruth, getRandomDare, getZodiac } = require('./lib/games');
-const { getPrayerTimes, getItDictionary, getRecipe } = require('./lib/utilities');
+const { getPrayerTimes, getNaturalTime, getItDictionary, getRecipe } = require('./lib/utilities');
 const { startTebak, checkTebak } = require('./lib/trivia');
 const { downloadTikTok, downloadIG } = require('./lib/downloader');
 const supabase = require('./lib/supabaseClient');
@@ -93,33 +93,48 @@ async function handleMessage(sock, msg) {
     // Check auto-responses first
     const lowerMsg = messageContent.toLowerCase();
 
-    // Check trivia answers
+    // 1. RADAR "BUKU INDUK" (EQuran.id) - Pendeteksi Waktu, Hari, Tanggal (ANTI-TYPO)
+    const isAskingTime = lowerMsg.includes('jam') || lowerMsg.includes('pukul') || lowerMsg.includes('waktu');
+    const isAskingDay = lowerMsg.includes('hari');
+    const isAskingDate = lowerMsg.includes('tanggal') || lowerMsg.includes('tgl');
+
+    if (!messageContent.startsWith(config.prefix) && !fromMe && (isAskingTime || isAskingDay || isAskingDate)) {
+        // Jika spesifik nanya jadwal sholat
+        if (lowerMsg.includes('sholat') || lowerMsg.includes('jadwal')) {
+            const prayerData = await getPrayerTimes();
+            await sock.sendMessage(sender, { text: prayerData }, { quoted: msg });
+            return;
+        }
+        // Jika nanya jam/hari/tanggal secara umum (balas santai tapi lengkap)
+        await sock.sendMessage(sender, { text: getNaturalTime() }, { quoted: msg });
+        return;
+    }
+
+    // 2. Check trivia answers
     if (isGroup && checkTebak(sender, lowerMsg)) {
         await sock.sendMessage(sender, { text: `🎉 *BENAR SEKALI!* 🎉\n@${msg.key.participant.split('@')[0]} berhasil menjawab dengan cepat!`, mentions: [msg.key.participant] }, { quoted: msg });
         return;
     }
 
-    if (!messageContent.startsWith(config.prefix) && (lowerMsg.includes('choli') || lowerMsg === 'bot' || lowerMsg.includes(' si bot'))) {
+    // 3. Persona AI Neng Fika (Gemini)
+    if (!messageContent.startsWith(config.prefix) && (lowerMsg.includes('neng fika') || lowerMsg.includes('fika') || lowerMsg === 'bot')) {
         // Prevent bot from replying to its own bot response
         if (fromMe) return;
 
-        // Pesan loading dihapus sesuai request
+        const isOwner = sender.startsWith(config.ownerNumber);
 
-        // Persona asik agar AI membalas seperti teman/manusia biasa dan TIDAK BERTELE-TELE
-        const personaPrompt = `Kamu adalah teman ngobrol dari Indonesia bernama Choli. Jawablah obrolan berikut dengan ramah dan santai menggunakan bahasa sehari-hari. 
-        ATURAN SANGAT PENTING: Jawablah dengan SANGAT SINGKAT, padat,ceria dan langsung ke intinya saja. Jangan bertele-tele, jangan memberikan penjelasan panjang lebar atau edukasi jika tidak diminta. Jangan pernah menyebutkan kamu adalah AI bot. 
-        Obrolan/pertanyaan: "${messageContent}"`;
+        const personaPrompt = isOwner 
+            ? `Ini Abang Rijal (ABG) tersayang Fika. Fika seneng banget Abang chat. Jawab dengan penuh perasaan, manja, cerdas, dan panggil Sayang/ABG. Obrolan: "${messageContent}"`
+            : `Ini orang lain. Jawab dengan tegas, pintar, berwawasan, tapi jangan terlalu ramah. Obrolan: "${messageContent}"`;
 
-        const aiResponse = await chatAI(personaPrompt);
+        const aiResponse = await chatAI(personaPrompt, isOwner);
         await sock.sendMessage(sender, { text: aiResponse }, { quoted: msg });
         return;
     }
 
     // Anti-Link System
     if (isGroup && (lowerMsg.includes('http://') || lowerMsg.includes('https://'))) {
-        // Warn and delete message (Baileys cannot easily delete others' msgs without admin rights, so we just warn)
-        await sock.sendMessage(sender, { text: `⚠️ *ANTI-LINK SYSTEM*\n\n@${msg.key.participant.split('@')[0]}, dilarang mengirim link mencurigakan di grup ini!`, mentions: [msg.key.participant] }, { quoted: msg });
-        // NOTE: Kick/Delete requires group admin logic, simplified to warning for now.
+        await sock.sendMessage(sender, { text: `Duh @${msg.key.participant.split('@')[0]}, jangan berani-berani sebar link di sini ya. Neng Fika nggak suka lho!`, mentions: [msg.key.participant] }, { quoted: msg });
     }
 
     if (!messageContent.startsWith(config.prefix)) return;
@@ -128,75 +143,64 @@ async function handleMessage(sock, msg) {
     const command = args.shift().toLowerCase();
     const textArgs = args.join(" ");
 
+    const isOwner = sender.startsWith(config.ownerNumber);
+
     // Context helpers
     const reply = (text) => sock.sendMessage(sender, { text }, { quoted: msg });
 
     // Basic routing
     switch (command) {
         case 'menu':
-            const menuText = `*Robot Si-Choli* 🤖\n\n` +
-                `🛡️ *Fitur Grup*\n` +
-                `- ${config.prefix}everyone\n` +
-                `- ${config.prefix}hidetag [pesan]\n` +
-                `- ${config.prefix}dev\n\n` +
-                `🎮 *Hiburan*\n` +
-                `- ${config.prefix}stiker (kirim/reply gambar)\n` +
-                `- ${config.prefix}siapa\n` +
-                `- ${config.prefix}truth / ${config.prefix}dare\n` +
-                `- ${config.prefix}confess [nomor] [pesan]\n` +
-                `- ${config.prefix}tebak\n` +
-                `- ${config.prefix}cekjodoh [nama1] [nama2]\n` +
-                `- ${config.prefix}halu [nama]\n` +
-                `- ${config.prefix}zodiak [zodiak]\n` +
-                `- ${config.prefix}quotes\n\n` +
-                `📚 *Edukasi & Pengetahuan*\n` +
-                `- ${config.prefix}apa-itu [istilah]\n` +
-                `- ${config.prefix}makeqr [teks/link]\n\n` +
-                `📅 *Utilitas & Daily*\n` +
-                `- ${config.prefix}jadwal\n` +
-                `- ${config.prefix}absen / ${config.prefix}resetabsen\n` +
-                `- ${config.prefix}ingatkan [menit] [pesan]\n` +
-                `- ${config.prefix}masak [bahan]\n` +
-                `- ${config.prefix}cuaca\n\n` +
-                `🚀 *Fitur Baru!*\n` +
-                `- ${config.prefix}tiktok [link]\n` +
-                `- ${config.prefix}ig [link]\n` +
-                `- ${config.prefix}tts [teks]\n` +
-                `- ${config.prefix}gambar [deskripsi]\n`;
+            const menuText = isOwner 
+                ? `Halo Abang Rijal Sayang! 😍\nNeng Fika siap bantu semua keperluan Abang hari ini:\n\n` +
+                  `🛡️ *Grup*\n` +
+                  `- ${config.prefix}everyone (Tag semua orang)\n` +
+                  `- ${config.prefix}hidetag [pesan]\n\n` +
+                  `🎮 *Hiburan*\n` +
+                  `- ${config.prefix}stiker\n` +
+                  `- ${config.prefix}truth / ${config.prefix}dare\n\n` +
+                  `🚀 *Lainnya*\n` +
+                  `- ${config.prefix}tiktok / ${config.prefix}ig\n\n` +
+                  `Apa pun buat Abang, Fika lakuin deh! 😘`
+                : `Daftar perintah Neng Fika:\n\n` +
+                  `🛡️ *Grup*\n` +
+                  `- ${config.prefix}everyone\n` +
+                  `- ${config.prefix}hidetag\n\n` +
+                  `🎮 *Hiburan*\n` +
+                  `- ${config.prefix}stiker\n\n` +
+                  `Ketik perintah dengan benar.`;
             await reply(menuText);
             break;
         case 'dev':
-            const devText = `*👑 Developer Si-Choli 👑*\n\n` +
-                `👨‍💻 *Rijalul Fikri (RF Digital)*\n\n` +
-                `💻 _"Sang kreator cerdas pencipta bot ajaib ini!"_\n` +
-                `Beliau adalah sosok kreatif asal Universitas Putera Batam (UPB) yang sukses merangkai fitur-fitur keren di dalam bot ini! 🚀🔥💻`;
-
+            const devText = isOwner 
+                ? `Ih Abang nanya terus, kan Abang Rijal itu satu-satunya orang hebat yang nyiptain Neng Fika. Sayang banget sama ABG! 💖`
+                : `Pencipta aku itu *Rijalul Fikri (RF Digital)*. Beliau programmer jenius, jangan berani ganggu ya!`;
             await reply(devText);
             break;
 
         // --- GRUP & SECURITY ---
         case 'everyone':
             if (!isGroup) return reply(config.messages.groupOnly);
-            if (!isAdmin) return reply("❌ Perintah ini hanya untuk admin grup!");
+            if (!isAdmin) return reply(isOwner ? "Sabar ya Sayang, Abang harus jadi admin dulu." : "Nggak boleh. Kamu bukan admin.");
             const participantsJids = participants.map(p => p.id);
-            await sock.sendMessage(sender, { text: "📢 *PERHATIAN SEMUANYA!!*\n\nTag All by Si-Choli!", mentions: participantsJids }, { quoted: msg });
+            await sock.sendMessage(sender, { text: isOwner ? "📢 Sayangku panggil kalian semua nih! Dengerin!" : "📢 Panggilan buat semua. Cek!", mentions: participantsJids }, { quoted: msg });
             break;
         case 'hidetag':
             if (!isGroup) return reply(config.messages.groupOnly);
-            if (!isAdmin) return reply("❌ Perintah ini hanya untuk admin grup!");
-            if (!textArgs) return reply(`Masukkan pesan! Contoh: ${config.prefix}hidetag Woy ngopi`);
+            if (!isAdmin) return reply("Cuma admin yang bisa pake ini ya.");
+            if (!textArgs) return reply(`Ketik pesannya juga dong! Contoh: ${config.prefix}hidetag Halo gaes`);
             const mems = participants.map(p => p.id);
             await sock.sendMessage(sender, { text: textArgs, mentions: mems });
             break;
 
         // --- HIBURAN ---
         case 'halu':
-            if (!textArgs) return reply(`Masukkan nama! Contoh: ${config.prefix}halu Budi`);
+            if (!textArgs) return reply(`Namanya siapa? Contoh: ${config.prefix}halu Budi`);
             await reply(getHaluMeter(textArgs));
             break;
         case 'jodoh':
         case 'cekjodoh':
-            if (args.length < 2) return reply(`Masukkan 2 nama! Contoh: ${config.prefix}cekjodoh Budi Siti`);
+            if (args.length < 2) return reply(`Masukin 2 nama ya. Contoh: ${config.prefix}cekjodoh Budi Siti`);
             await reply(getCekJodoh(args[0], args[1]));
             break;
         case 'truth':
@@ -206,49 +210,49 @@ async function handleMessage(sock, msg) {
             await reply(getRandomDare());
             break;
         case 'zodiak':
-            if (!textArgs) return reply(`Masukkan zodiak! Contoh: ${config.prefix}zodiak Aries`);
+            if (!textArgs) return reply(`Zodiaknya apa? Contoh: ${config.prefix}zodiak Aries`);
             await reply(getZodiac(textArgs));
             break;
         case 'quotes':
             await reply(await getRandomQuote());
             break;
         case 'broadcastquote':
-            if (sender !== config.ownerNumber + '@s.whatsapp.net') return reply('Hanya owner yang bisa pakai command ini!');
-            await reply('Sedang memproses broadcast quote ke semua grup...');
+            if (sender !== config.ownerNumber + '@s.whatsapp.net') return reply('Cuma owner aku yang bisa pake ini!');
+            await reply('Oke, aku kirim quote-nya ke semua grup ya...');
             try {
                 const quoteText = await getRandomQuote();
                 const groups = await sock.groupFetchAllParticipating();
                 let groupCount = 0;
                 for (const groupId in groups) {
-                    await sock.sendMessage(groupId, { text: `[Penyemangat Harimu ✨]\n\n${quoteText}` });
+                    await sock.sendMessage(groupId, { text: `[Penyemangat Hari Ini ✨]\n\n${quoteText}` });
                     await new Promise(res => setTimeout(res, 2000));
                     groupCount++;
                 }
-                await reply(`✅ Berhasil mengirim quote ke ${groupCount} grup!`);
+                await reply(`Beres! Udah aku kirim ke ${groupCount} grup ya.`);
             } catch (err) {
-                await reply(`❌ Gagal membroadcast quote: ${err.message}`);
+                await reply(`Aduh, gagal kirim broadcast: ${err.message}`);
             }
             break;
         case 'siapa':
             if (!isGroup) return reply(config.messages.groupOnly);
             const grpMeta = await sock.groupMetadata(sender);
             const randomMember = grpMeta.participants[Math.floor(Math.random() * grpMeta.participants.length)];
-            await sock.sendMessage(sender, { text: `🎲 *Group Roulette*\n\nSi-Choli memilih: @${randomMember.id.split('@')[0]} !!`, mentions: [randomMember.id] }, { quoted: msg });
+            await sock.sendMessage(sender, { text: `Pilihan aku jatuh kepada... @${randomMember.id.split('@')[0]}!`, mentions: [randomMember.id] }, { quoted: msg });
             break;
 
         // --- EDUKASI & API ---
         case 'cuaca':
             await reply(config.messages.wait);
             const weather = await getWeather('Batam');
-            await reply(weather);
+            await reply(`Nih info cuaca di Batam:\n${weather}`);
             break;
         case 'apa-itu':
-            if (!textArgs) return reply(`Masukkan kata! Contoh: ${config.prefix}apa-itu Makanan`);
+            if (!textArgs) return reply(`Mau tanya apa? Contoh: ${config.prefix}apa-itu Kopi`);
             await reply(config.messages.wait);
             await reply(await getItDictionary(textArgs));
             break;
         case 'masak':
-            if (!textArgs) return reply(`Bahan masaknya apa? Contoh: ${config.prefix}masak Telur`);
+            if (!textArgs) return reply(`Bahannya apa? Contoh: ${config.prefix}masak Ayam`);
             await reply(getRecipe(textArgs));
             break;
         case 'absen':
@@ -257,42 +261,40 @@ async function handleMessage(sock, msg) {
             const currentAbsen = await getAbsensi(sender);
             
             if (currentAbsen.includes(absenParticipant)) {
-                return reply("Bro, kamu sudah absen!");
+                return reply("Kamu kan udah absen tadi!");
             }
             
             await addAbsensi(sender, absenParticipant);
             const updatedAbsen = await getAbsensi(sender);
             
-            let txtAbsen = `*Daftar Hadir Grup* 📋\n\n`;
+            let txtAbsen = `Daftar orang yang udah hadir:\n\n`;
             updatedAbsen.forEach((p, i) => txtAbsen += `${i + 1}. @${p.split('@')[0]}\n`);
             await sock.sendMessage(sender, { text: txtAbsen, mentions: updatedAbsen }, { quoted: msg });
             break;
         case 'resetabsen':
             if (!isGroup) return reply(config.messages.groupOnly);
-            if (!isAdmin) return reply("❌ Perintah ini hanya untuk admin grup!");
+            if (!isAdmin) return reply("Cuma admin yang bisa reset absen ya.");
             await resetAbsensi(sender);
-            await reply("DAFTAR ABSEN BERHASIL DIRESET! 🗑️");
+            await reply("Beres! Daftar absen udah aku hapus semua.");
             break;
         case 'jadwal':
-            await reply(getPrayerTimes());
+            await reply(await getPrayerTimes());
             break;
         case 'makeqr':
-            if (!textArgs) return reply(`Kirim teks/link yang mau dibikin QR!`);
+            if (!textArgs) return reply(`Teks atau link-nya apa?`);
             const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=500x500&data=${encodeURIComponent(textArgs)}`;
-            await sock.sendMessage(sender, { image: { url: qrUrl }, caption: `Bip bop! QR Code dadi nih!` }, { quoted: msg });
+            await sock.sendMessage(sender, { image: { url: qrUrl }, caption: `Nih QR Code-nya udah jadi!` }, { quoted: msg });
             break;
         case 'waktu':
         case 'jam':
-            const now = new Date();
-            const options = { timeZone: 'Asia/Jakarta', weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' };
-            await reply(`⏱️ *Waktu Saat Ini (WIB)*\n\n${now.toLocaleDateString('id-ID', options)}`);
+            await reply(await getPrayerTimes());
             break;
 
         // --- FITUR BARU ---
         case 'tts':
-            if (!textArgs) return reply(`Masukkan teksnya! Contoh: ${config.prefix}tts Halo semua`);
+            if (!textArgs) return reply(`Teksnya apa yang mau dijadiin suara?`);
             const audioUrl = getTTSUrl(textArgs);
-            if (!audioUrl) return reply('❌ Gagal membuat suara (TTS).');
+            if (!audioUrl) return reply('Duh, gagal bikin suaranya. Coba lagi ya!');
             await sock.sendMessage(sender, {
                 audio: { url: audioUrl },
                 mimetype: 'audio/mp4',
@@ -301,35 +303,35 @@ async function handleMessage(sock, msg) {
             break;
 
         case 'gambar':
-            if (!textArgs) return reply(`Masukkan deskripsi gambar! Contoh: ${config.prefix}gambar robot kucing minum kopi`);
+            if (!textArgs) return reply(`Mau gambar apa? Contoh: ${config.prefix}gambar kucing pake kacamata`);
             await reply(config.messages.wait);
             const imageBuffer = await generateImage(textArgs);
-            if (!imageBuffer) return reply('❌ Gagal membuat gambar. Server AI sedang sibuk atau error.');
+            if (!imageBuffer) return reply('Yah, gagal bikin gambarnya. Servernya mungkin lagi sibuk.');
 
             await sock.sendMessage(sender, {
                 image: imageBuffer,
-                caption: `Bip bop! 🎨 Gambar berhasil dibuat untuk: ${textArgs}`
+                caption: `Nih gambar pesenan kamu: ${textArgs}`
             }, { quoted: msg });
             break;
 
         case 'tiktok':
         case 'tt':
-            if (!textArgs || !textArgs.includes('tiktok')) return reply(`Kirim link TikTok! Contoh: ${config.prefix}tiktok https://vt.tiktok.com/...`);
+            if (!textArgs || !textArgs.includes('tiktok')) return reply(`Link TikToknya mana?`);
             await reply(config.messages.wait);
             const ttData = await downloadTikTok(textArgs);
-            if (!ttData || !ttData.videoUrl) return reply('❌ Gagal mendownload TikTok. Link mungkin private atau server sibuk.');
+            if (!ttData || !ttData.videoUrl) return reply('Gagal download video TikToknya. Linknya bener kan?');
             await sock.sendMessage(sender, {
                 video: { url: ttData.videoUrl },
-                caption: `🎵 *TikTok Downloader*\n\nJudul: ${ttData.title || '-'}`
+                caption: `Video TikToknya udah jadi nih! Judulnya: ${ttData.title || '-'}`
             }, { quoted: msg });
             break;
 
         case 'ig':
         case 'instagram':
-            if (!textArgs || !textArgs.includes('instagram.com')) return reply(`Kirim link Instagram! Contoh: ${config.prefix}ig https://www.instagram.com/p/...`);
+            if (!textArgs || !textArgs.includes('instagram.com')) return reply(`Link Instagramnya mana?`);
             await reply(config.messages.wait);
             const igData = await downloadIG(textArgs);
-            if (!igData || igData.length === 0) return reply('❌ Gagal mendownload IG. Pastikan akun tidak diprivate atau URL valid.');
+            if (!igData || igData.length === 0) return reply('Gagal download dari IG. Pastikan linknya bener dan nggak di-private ya.');
 
             for (const mediaUrl of igData) {
                 if (mediaUrl.includes('.mp4') || mediaUrl.includes('video')) {
@@ -360,7 +362,7 @@ async function handleMessage(sock, msg) {
                     };
                     ext = isQuotedImage ? 'jpg' : 'mp4';
                 } else {
-                    return await reply(`Kirim atau balas gambar/video durasi max 5 detik dengan caption ${config.prefix}stiker`);
+                    return await reply(`Kirim atau balas gambar/video durasi max 5 detik dengan caption ${config.prefix}stiker ya!`);
                 }
 
                 await reply(config.messages.wait);
@@ -372,7 +374,7 @@ async function handleMessage(sock, msg) {
                 await sock.sendMessage(sender, { sticker: stickerBuffer }, { quoted: msg });
             } catch (err) {
                 console.error('Error making sticker:', err);
-                await reply('Gagal membuat stiker. Pastikan FFMPEG terinstal di server.');
+                await reply('Gagal bikin stiker nih. Maaf ya!');
             }
             break;
         case 'tebak':
@@ -381,13 +383,13 @@ async function handleMessage(sock, msg) {
             await reply(await startTebak(sender));
             break;
         case 'confess':
-            if (args.length < 2) return reply(`Gunakan format: ${config.prefix}confess [nomor tujuan] [pesan]\nContoh: ${config.prefix}confess 628123... Halo aku suka kamu`);
+            if (args.length < 2) return reply(`Caranya: ${config.prefix}confess [nomor] [pesan]. Misal: ${config.prefix}confess 628xxx Halo sayang`);
             
             // Rate Limiting
             const lastUsed = confessLimit.get(msg.key.participant || sender);
             const nowTime = Date.now();
             if (lastUsed && nowTime - lastUsed < 60000) {
-                return reply(`⚠️ Sabar bro! Kamu baru saja mengirim confess. Tunggu ${Math.ceil((60000 - (nowTime - lastUsed)) / 1000)} detik lagi.`);
+                return reply(`Sabar ya! Tunggu ${Math.ceil((60000 - (nowTime - lastUsed)) / 1000)} detik lagi baru bisa kirim confess lagi.`);
             }
             confessLimit.set(msg.key.participant || sender, nowTime);
 
@@ -395,27 +397,27 @@ async function handleMessage(sock, msg) {
             const confessMsg = args.join(" ");
             const targetJid = `${targetNum.replace(/[^0-9]/g, '')}@s.whatsapp.net`;
             try {
-                await sock.sendMessage(targetJid, { text: `💌 *PESAN RAHASIA (CONFESS)*\n\nSeseorang menjapri Si-Choli untuk mengirimimu pesan ini:\n\n"${confessMsg}"\n\n_Pesan ini dikirim anonim via Si-Choli Bot._` });
-                await reply('✅ Pesan rahasia berhasil dikirim lewat jalur dalem!');
+                await sock.sendMessage(targetJid, { text: `💌 *PESAN RAHASIA*\n\nSeseorang titip pesan ini buat kamu:\n\n"${confessMsg}"\n\n_Pesan ini dikirim anonim via Choli Bot._` });
+                await reply('Beres! Pesan rahasianya udah aku kirim ya.');
             } catch (err) {
-                await reply('❌ Gagal ngirim pesan. Pastikan nomor tujuan pakai kode negara (62...) dan aktif di WA.');
+                await reply('Gagal kirim pesan. Pastikan nomornya bener dan aktif di WA ya.');
             }
             break;
         case 'ingatkan':
             if (!isGroup) return reply(config.messages.groupOnly);
-            if (args.length < 2) return reply(`Format salah! Contoh: ${config.prefix}ingatkan 10 Jangan lupa absen SIAKAD`);
+            if (args.length < 2) return reply(`Formatnya: ${config.prefix}ingatkan [menit] [pesan]. Contoh: ${config.prefix}ingatkan 10 Jangan lupa makan`);
 
             const minutes = parseInt(args.shift());
-            if (isNaN(minutes) || minutes <= 0) return reply(`Waktu harus berupa angka menit! Contoh: ${config.prefix}ingatkan 10 Waktunya absen`);
+            if (isNaN(minutes) || minutes <= 0) return reply(`Waktunya pake angka menit ya!`);
 
             const reminderMsg = args.join(" ");
-            await reply(`⏱️ *Group Reminder Diaktifkan!*\n\nBot akan mengingatkan grup ini dalam ${minutes} menit untuk:\n"${reminderMsg}"`);
+            await reply(`Oke! Aku bakal ingetin grup ini ${minutes} menit lagi buat:\n"${reminderMsg}"`);
 
             setTimeout(async () => {
                 const metadata = await sock.groupMetadata(sender);
                 const mems = metadata.participants.map(p => p.id);
                 // Tag everyone for the reminder
-                await sock.sendMessage(sender, { text: `⏰ *PENGINGAT (REMINDER)!!*\n\n"${reminderMsg}"\n\n- Dari Si-Choli untuk warga grup.`, mentions: mems });
+                await sock.sendMessage(sender, { text: `⏰ *PENGINGAT!!*\n\nJangan lupa ya:\n"${reminderMsg}"\n\n- Dari aku, Choli.`, mentions: mems });
             }, minutes * 60 * 1000);
             break;
 

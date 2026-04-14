@@ -53,15 +53,28 @@ async function startCronJobs(sock) {
         // 2. Persiapan & Fetch Jadwal Sholat Dinamis
         if (dateString !== tanggalJadwal) {
             try {
-                // 0801 adalah kode kota Batam di api.myquran.com
-                const res = await axios.get(`https://api.myquran.com/v2/sholat/jadwal/0801/${dateString}`);
-                if (res.data && res.data.data && res.data.data.jadwal) {
-                    jadwalHariIni = res.data.data.jadwal;
-                    tanggalJadwal = dateString;
-                    console.log(`[CRON] Berhasil fetch jadwal sholat untuk ${dateString}`);
+                const now = moment().tz('Asia/Jakarta');
+                const month = now.month() + 1;
+                const year = now.year();
+                const day = now.date();
+
+                const res = await axios.post('https://equran.id/api/v2/shalat', {
+                    provinsi: 'Kepulauan Riau',
+                    kabkota: 'Kota Batam',
+                    bulan: month,
+                    tahun: year
+                });
+
+                if (res.data && res.data.code === 200) {
+                    const todayData = res.data.data.jadwal.find(j => j.tanggal === day);
+                    if (todayData) {
+                        jadwalHariIni = todayData;
+                        tanggalJadwal = dateString;
+                        console.log(`[CRON] Berhasil fetch jadwal sholat EQuran.id untuk ${dateString}`);
+                    }
                 }
             } catch (err) {
-                console.error('[CRON Error] Gagal fetch jadwal sholat:', err);
+                console.error('[CRON Error] Gagal fetch jadwal sholat dari EQuran.id:', err.message);
             }
         }
 
