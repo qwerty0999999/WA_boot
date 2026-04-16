@@ -73,8 +73,12 @@ async function handleMessage(sock, msg) {
     // Add default empty string OR '' to prevent undefined from optional chaining
     const messageContent = (msg.message.conversation || msg.message.extendedTextMessage?.text || msg.message.imageMessage?.caption || msg.message.videoMessage?.caption || "").toString();
     const sender = msg.key.remoteJid;
+    const participant = msg.key.participant || sender; // Orang yang beneran chat
     const isGroup = sender.endsWith('@g.us');
     const fromMe = msg.key.fromMe || false;
+
+    // SISTEM DETEKSI OWNER SUPER TELITI (Cek ID Orang, Bukan ID Grup)
+    const isOwner = config.owners.includes(participant) || participant.includes(config.ownerNumber);
 
     // Prevent infinite loop from bot's own response
     if (fromMe && !messageContent.startsWith(config.prefix)) {
@@ -86,27 +90,25 @@ async function handleMessage(sock, msg) {
     if (isGroup) {
         groupMetadata = await sock.groupMetadata(sender);
         participants = groupMetadata.participants;
-        isAdmin = participants.find(p => p.id === msg.key.participant)?.admin !== null;
+        isAdmin = participants.find(p => p.id === participant)?.admin !== null;
         isBotAdmin = participants.find(p => p.id === sock.user.id.split(':')[0] + '@s.whatsapp.net')?.admin !== null;
     }
 
     // Check auto-responses first
     const lowerMsg = messageContent.toLowerCase();
 
-    // 1. RADAR "BUKU INDUK" (EQuran.id) - Pendeteksi Waktu, Hari, Tanggal (ANTI-TYPO)
+    // 1. RADAR WAKTU (EQuran.id)
     const isAskingTime = lowerMsg.includes('jam') || lowerMsg.includes('pukul') || lowerMsg.includes('waktu');
     const isAskingDay = lowerMsg.includes('hari');
     const isAskingDate = lowerMsg.includes('tanggal') || lowerMsg.includes('tgl');
 
     if (!messageContent.startsWith(config.prefix) && !fromMe && (isAskingTime || isAskingDay || isAskingDate)) {
-        // Jika spesifik nanya jadwal sholat
         if (lowerMsg.includes('sholat') || lowerMsg.includes('jadwal')) {
             const prayerData = await getPrayerTimes();
             await sock.sendMessage(sender, { text: prayerData }, { quoted: msg });
             return;
         }
 
-        // Tentukan tipe respon berdasarkan pertanyaan
         let type = 'all';
         if (isAskingTime && !isAskingDay && !isAskingDate) type = 'time';
         else if (isAskingDay && !isAskingTime && !isAskingDate) type = 'day';
@@ -118,31 +120,26 @@ async function handleMessage(sock, msg) {
 
     // 2. Check trivia answers
     if (isGroup && checkTebak(sender, lowerMsg)) {
-        await sock.sendMessage(sender, { text: `🎉 *BENAR SEKALI!* 🎉\n@${msg.key.participant.split('@')[0]} berhasil menjawab dengan cepat!`, mentions: [msg.key.participant] }, { quoted: msg });
+        await sock.sendMessage(sender, { text: `🎉 *BENAR SEKALI!* 🎉\n@${participant.split('@')[0]} berhasil menjawab dengan cepat!`, mentions: [participant] }, { quoted: msg });
         return;
     }
 
     // 3. Persona AI Neng Fika (Gemini)
     if (!messageContent.startsWith(config.prefix) && (lowerMsg.includes('neng fika') || lowerMsg.includes('fika') || lowerMsg === 'bot')) {
-        // Prevent bot from replying to its own bot response
         if (fromMe) return;
 
-        // Cek apakah pengirim adalah Owner (Berdasarkan nomor HP atau JID khusus)
-        const isOwner = sender.startsWith(config.ownerNumber) || sender === config.ownerJid;
-        const userJid = msg.key.participant || sender; // Ambil JID asli pengirim
-
-        const personaPrompt = isOwner
+        const personaPrompt = isOwner 
             ? `Ini Abang Rijal (ABG) tersayang Fika. Fika seneng banget Abang chat. Jawab dengan penuh perasaan, manja, cerdas, dan panggil Sayang/ABG. Obrolan: "${messageContent}"`
-            : `Ini Kawan yang nge-chat. Jawab dengan tegas, pintar, berwawasan,ramah, dan sopan. Obrolan: "${messageContent}"`;
+            : `Ini Kawan yang nge-chat. Jawab dengan tegas, pintar, berwawasan, tapi jangan terlalu ramah. Panggil dia 'Kawan'. Obrolan: "${messageContent}"`;
 
-        const aiResponse = await chatAI(personaPrompt, isOwner, userJid);
+        const aiResponse = await chatAI(personaPrompt, isOwner, participant);
         await sock.sendMessage(sender, { text: aiResponse }, { quoted: msg });
         return;
     }
 
     // Anti-Link System
     if (isGroup && (lowerMsg.includes('http://') || lowerMsg.includes('https://'))) {
-        await sock.sendMessage(sender, { text: `Duh @${msg.key.participant.split('@')[0]}, jangan berani-berani sebar link di sini ya. Neng Fika nggak suka lho!`, mentions: [msg.key.participant] }, { quoted: msg });
+        await sock.sendMessage(sender, { text: `Duh @${participant.split('@')[0]}, jangan berani-berani sebar link di sini ya. Neng Fika nggak suka lho!`, mentions: [participant] }, { quoted: msg });
     }
 
     if (!messageContent.startsWith(config.prefix)) return;
@@ -151,43 +148,39 @@ async function handleMessage(sock, msg) {
     const command = args.shift().toLowerCase();
     const textArgs = args.join(" ");
 
-    // Cek apakah pengirim adalah Owner
-    const isOwner = sender.startsWith(config.ownerNumber) || sender === config.ownerJid;
-
     // Context helpers
     const reply = (text) => sock.sendMessage(sender, { text }, { quoted: msg });
 
     // Basic routing
     switch (command) {
         case 'menu':
-            const menuText = isOwner
+            const menuText = isOwner 
                 ? `Halo Abang Rijal Sayang! 😍\nNeng Fika siap bantu semua keperluan Abang hari ini:\n\n` +
-                `🛡️ *Grup*\n` +
-                `- ${config.prefix}everyone (Tag semua orang)\n` +
-                `- ${config.prefix}hidetag [pesan]\n\n` +
-                `🎮 *Hiburan*\n` +
-                `- ${config.prefix}stiker\n` +
-                `- ${config.prefix}truth / ${config.prefix}dare\n\n` +
-                `🚀 *Lainnya*\n` +
-                `- ${config.prefix}tiktok / ${config.prefix}ig\n\n` +
-                `Apa pun buat Abang, Fika lakuin deh! 😘`
+                  `🛡️ *Grup*\n` +
+                  `- ${config.prefix}everyone\n` +
+                  `- ${config.prefix}hidetag [pesan]\n\n` +
+                  `🎮 *Hiburan*\n` +
+                  `- ${config.prefix}stiker\n` +
+                  `- ${config.prefix}truth / ${config.prefix}dare\n\n` +
+                  `🚀 *Lainnya*\n` +
+                  `- ${config.prefix}tiktok / ${config.prefix}ig\n\n` +
+                  `Apa pun buat Abang, Fika lakuin deh! 😘`
                 : `Daftar perintah Neng Fika:\n\n` +
-                `🛡️ *Grup*\n` +
-                `- ${config.prefix}everyone\n` +
-                `- ${config.prefix}hidetag\n\n` +
-                `🎮 *Hiburan*\n` +
-                `- ${config.prefix}stiker\n\n` +
-                `Ketik perintah dengan benar.`;
+                  `🛡️ *Grup*\n` +
+                  `- ${config.prefix}everyone\n` +
+                  `- ${config.prefix}hidetag\n\n` +
+                  `🎮 *Hiburan*\n` +
+                  `- ${config.prefix}stiker\n\n` +
+                  `Ketik perintah dengan benar.`;
             await reply(menuText);
             break;
         case 'dev':
-            const devText = isOwner
+            const devText = isOwner 
                 ? `Ih Abang nanya terus, kan Abang Rijal itu satu-satunya orang hebat yang nyiptain Neng Fika. Sayang banget sama ABG! 💖`
                 : `Pencipta aku itu *Rijalul Fikri (RF Digital)*. Beliau programmer jenius, jangan berani ganggu ya!`;
             await reply(devText);
             break;
 
-        // --- GRUP & SECURITY ---
         case 'everyone':
             if (!isGroup) return reply(config.messages.groupOnly);
             if (!isAdmin) return reply(isOwner ? "Sabar ya Sayang, Abang harus jadi admin dulu." : "Nggak boleh. Kamu bukan admin.");
@@ -196,20 +189,19 @@ async function handleMessage(sock, msg) {
             break;
         case 'hidetag':
             if (!isGroup) return reply(config.messages.groupOnly);
-            if (!isAdmin) return reply("Cuma admin yang bisa pake ini ya.");
+            if (!isAdmin) return reply(isOwner ? "Cuma Abang yang bisa tapi harus admin dulu Sayang." : "Cuma admin yang bisa pake ini ya.");
             if (!textArgs) return reply(`Ketik pesannya juga dong! Contoh: ${config.prefix}hidetag Halo gaes`);
             const mems = participants.map(p => p.id);
             await sock.sendMessage(sender, { text: textArgs, mentions: mems });
             break;
 
-        // --- HIBURAN ---
         case 'halu':
-            if (!textArgs) return reply(`Namanya siapa? Contoh: ${config.prefix}halu Budi`);
+            if (!textArgs) return reply(`Namanya siapa?`);
             await reply(getHaluMeter(textArgs));
             break;
         case 'jodoh':
         case 'cekjodoh':
-            if (args.length < 2) return reply(`Masukin 2 nama ya. Contoh: ${config.prefix}cekjodoh Budi Siti`);
+            if (args.length < 2) return reply(`Masukin 2 nama ya.`);
             await reply(getCekJodoh(args[0], args[1]));
             break;
         case 'truth':
@@ -219,14 +211,14 @@ async function handleMessage(sock, msg) {
             await reply(getRandomDare());
             break;
         case 'zodiak':
-            if (!textArgs) return reply(`Zodiaknya apa? Contoh: ${config.prefix}zodiak Aries`);
+            if (!textArgs) return reply(`Zodiaknya apa?`);
             await reply(getZodiac(textArgs));
             break;
         case 'quotes':
             await reply(await getRandomQuote());
             break;
         case 'broadcastquote':
-            if (sender !== config.ownerNumber + '@s.whatsapp.net') return reply('Cuma owner aku yang bisa pake ini!');
+            if (!isOwner) return reply('Cuma owner aku yang bisa pake ini!');
             await reply('Oke, aku kirim quote-nya ke semua grup ya...');
             try {
                 const quoteText = await getRandomQuote();
@@ -249,33 +241,27 @@ async function handleMessage(sock, msg) {
             await sock.sendMessage(sender, { text: `Pilihan aku jatuh kepada... @${randomMember.id.split('@')[0]}!`, mentions: [randomMember.id] }, { quoted: msg });
             break;
 
-        // --- EDUKASI & API ---
         case 'cuaca':
             await reply(config.messages.wait);
             const weather = await getWeather('Batam');
             await reply(`Nih info cuaca di Batam:\n${weather}`);
             break;
         case 'apa-itu':
-            if (!textArgs) return reply(`Mau tanya apa? Contoh: ${config.prefix}apa-itu Kopi`);
+            if (!textArgs) return reply(`Mau tanya apa?`);
             await reply(config.messages.wait);
             await reply(await getItDictionary(textArgs));
             break;
         case 'masak':
-            if (!textArgs) return reply(`Bahannya apa? Contoh: ${config.prefix}masak Ayam`);
+            if (!textArgs) return reply(`Bahannya apa?`);
             await reply(getRecipe(textArgs));
             break;
         case 'absen':
             if (!isGroup) return reply(config.messages.groupOnly);
-            const absenParticipant = msg.key.participant;
+            const absenParticipant = participant;
             const currentAbsen = await getAbsensi(sender);
-
-            if (currentAbsen.includes(absenParticipant)) {
-                return reply("Kamu kan udah absen tadi!");
-            }
-
+            if (currentAbsen.includes(absenParticipant)) return reply("Kamu kan udah absen tadi!");
             await addAbsensi(sender, absenParticipant);
             const updatedAbsen = await getAbsensi(sender);
-
             let txtAbsen = `Daftar orang yang udah hadir:\n\n`;
             updatedAbsen.forEach((p, i) => txtAbsen += `${i + 1}. @${p.split('@')[0]}\n`);
             await sock.sendMessage(sender, { text: txtAbsen, mentions: updatedAbsen }, { quoted: msg });
@@ -296,31 +282,22 @@ async function handleMessage(sock, msg) {
             break;
         case 'waktu':
         case 'jam':
-            await reply(await getPrayerTimes());
+            await reply(getNaturalTime('time'));
             break;
 
-        // --- FITUR BARU ---
         case 'tts':
-            if (!textArgs) return reply(`Teksnya apa yang mau dijadiin suara?`);
+            if (!textArgs) return reply(`Teksnya apa?`);
             const audioUrl = getTTSUrl(textArgs);
-            if (!audioUrl) return reply('Duh, gagal bikin suaranya. Coba lagi ya!');
-            await sock.sendMessage(sender, {
-                audio: { url: audioUrl },
-                mimetype: 'audio/mp4',
-                ptt: true // Kirim sebagai Voice Note
-            }, { quoted: msg });
+            if (!audioUrl) return reply('Duh, gagal bikin suaranya.');
+            await sock.sendMessage(sender, { audio: { url: audioUrl }, mimetype: 'audio/mp4', ptt: true }, { quoted: msg });
             break;
 
         case 'gambar':
-            if (!textArgs) return reply(`Mau gambar apa? Contoh: ${config.prefix}gambar kucing pake kacamata`);
+            if (!textArgs) return reply(`Mau gambar apa?`);
             await reply(config.messages.wait);
             const imageBuffer = await generateImage(textArgs);
-            if (!imageBuffer) return reply('Yah, gagal bikin gambarnya. Servernya mungkin lagi sibuk.');
-
-            await sock.sendMessage(sender, {
-                image: imageBuffer,
-                caption: `Nih gambar pesenan kamu: ${textArgs}`
-            }, { quoted: msg });
+            if (!imageBuffer) return reply('Yah, gagal bikin gambarnya.');
+            await sock.sendMessage(sender, { image: imageBuffer, caption: `Nih gambar pesenan kamu: ${textArgs}` }, { quoted: msg });
             break;
 
         case 'tiktok':
@@ -328,11 +305,8 @@ async function handleMessage(sock, msg) {
             if (!textArgs || !textArgs.includes('tiktok')) return reply(`Link TikToknya mana?`);
             await reply(config.messages.wait);
             const ttData = await downloadTikTok(textArgs);
-            if (!ttData || !ttData.videoUrl) return reply('Gagal download video TikToknya. Linknya bener kan?');
-            await sock.sendMessage(sender, {
-                video: { url: ttData.videoUrl },
-                caption: `Video TikToknya udah jadi nih! Judulnya: ${ttData.title || '-'}`
-            }, { quoted: msg });
+            if (!ttData || !ttData.videoUrl) return reply('Gagal download video TikToknya.');
+            await sock.sendMessage(sender, { video: { url: ttData.videoUrl }, caption: `Video TikToknya udah jadi nih!` }, { quoted: msg });
             break;
 
         case 'ig':
@@ -340,8 +314,7 @@ async function handleMessage(sock, msg) {
             if (!textArgs || !textArgs.includes('instagram.com')) return reply(`Link Instagramnya mana?`);
             await reply(config.messages.wait);
             const igData = await downloadIG(textArgs);
-            if (!igData || igData.length === 0) return reply('Gagal download dari IG. Pastikan linknya bener dan nggak di-private ya.');
-
+            if (!igData || igData.length === 0) return reply('Gagal download dari IG.');
             for (const mediaUrl of igData) {
                 if (mediaUrl.includes('.mp4') || mediaUrl.includes('video')) {
                     await sock.sendMessage(sender, { video: { url: mediaUrl } }, { quoted: msg });
@@ -351,27 +324,30 @@ async function handleMessage(sock, msg) {
             }
             break;
 
-        // --- UTILS MENUNGGU IMPLEMENTASI ---    
         case 'stiker':
+        case 's':
             try {
-                const isQuotedImage = msg.message.extendedTextMessage?.contextInfo?.quotedMessage?.imageMessage;
-                const isQuotedVideo = msg.message.extendedTextMessage?.contextInfo?.quotedMessage?.videoMessage;
+                // Cari media di pesan sekarang atau pesan yang dibalas (quoted)
+                const quoted = msg.message.extendedTextMessage?.contextInfo?.quotedMessage;
+                const isQuotedImage = quoted?.imageMessage;
+                const isQuotedVideo = quoted?.videoMessage;
                 const isImage = msg.message.imageMessage;
                 const isVideo = msg.message.videoMessage;
 
                 let mediaMsg;
                 let ext;
+
                 if (isImage || isVideo) {
                     mediaMsg = msg;
                     ext = isImage ? 'jpg' : 'mp4';
                 } else if (isQuotedImage || isQuotedVideo) {
                     mediaMsg = {
                         key: msg.message.extendedTextMessage.contextInfo.stanzaId,
-                        message: msg.message.extendedTextMessage.contextInfo.quotedMessage
+                        message: quoted
                     };
                     ext = isQuotedImage ? 'jpg' : 'mp4';
                 } else {
-                    return await reply(`Kirim atau balas gambar/video durasi max 5 detik dengan caption ${config.prefix}stiker ya!`);
+                    return await reply(`Abang Sayang, kirim atau balas (*reply*) gambar/video pendek buat dijadiin stiker ya! 😘`);
                 }
 
                 await reply(config.messages.wait);
@@ -383,55 +359,46 @@ async function handleMessage(sock, msg) {
                 await sock.sendMessage(sender, { sticker: stickerBuffer }, { quoted: msg });
             } catch (err) {
                 console.error('Error making sticker:', err);
-                await reply('Gagal bikin stiker nih. Maaf ya!');
+                await reply(isOwner ? 'Aduh Sayang, maaf ya Neng gagal bikin stikernya... 🥺' : 'Gagal bikin stiker.');
             }
             break;
+
         case 'tebak':
             if (!isGroup) return reply(config.messages.groupOnly);
             await reply(config.messages.wait);
             await reply(await startTebak(sender));
             break;
         case 'confess':
-            if (args.length < 2) return reply(`Caranya: ${config.prefix}confess [nomor] [pesan]. Misal: ${config.prefix}confess 628xxx Halo sayang`);
-
-            // Rate Limiting
-            const lastUsed = confessLimit.get(msg.key.participant || sender);
+            if (args.length < 2) return reply(`Caranya: ${config.prefix}confess [nomor] [pesan].`);
+            const lastUsed = confessLimit.get(participant);
             const nowTime = Date.now();
-            if (lastUsed && nowTime - lastUsed < 60000) {
-                return reply(`Sabar ya! Tunggu ${Math.ceil((60000 - (nowTime - lastUsed)) / 1000)} detik lagi baru bisa kirim confess lagi.`);
-            }
-            confessLimit.set(msg.key.participant || sender, nowTime);
-
+            if (lastUsed && nowTime - lastUsed < 60000) return reply(`Sabar ya! Tunggu bentar lagi.`);
+            confessLimit.set(participant, nowTime);
             const targetNum = args.shift();
             const confessMsg = args.join(" ");
             const targetJid = `${targetNum.replace(/[^0-9]/g, '')}@s.whatsapp.net`;
             try {
-                await sock.sendMessage(targetJid, { text: `💌 *PESAN RAHASIA*\n\nSeseorang titip pesan ini buat kamu:\n\n"${confessMsg}"\n\n_Pesan ini dikirim anonim via Choli Bot._` });
+                await sock.sendMessage(targetJid, { text: `💌 *PESAN RAHASIA*\n\nSeseorang titip pesan ini buat kamu:\n\n"${confessMsg}"\n\n_Pesan ini dikirim anonim via Neng Fika Bot._` });
                 await reply('Beres! Pesan rahasianya udah aku kirim ya.');
             } catch (err) {
-                await reply('Gagal kirim pesan. Pastikan nomornya bener dan aktif di WA ya.');
+                await reply('Gagal kirim pesan. Pastikan nomornya bener.');
             }
             break;
         case 'ingatkan':
             if (!isGroup) return reply(config.messages.groupOnly);
-            if (args.length < 2) return reply(`Formatnya: ${config.prefix}ingatkan [menit] [pesan]. Contoh: ${config.prefix}ingatkan 10 Jangan lupa makan`);
-
+            if (args.length < 2) return reply(`Formatnya: ${config.prefix}ingatkan [menit] [pesan].`);
             const minutes = parseInt(args.shift());
             if (isNaN(minutes) || minutes <= 0) return reply(`Waktunya pake angka menit ya!`);
-
             const reminderMsg = args.join(" ");
-            await reply(`Oke! Aku bakal ingetin grup ini ${minutes} menit lagi buat:\n"${reminderMsg}"`);
-
+            await reply(`Oke! Aku bakal ingetin grup ini ${minutes} menit lagi.`);
             setTimeout(async () => {
                 const metadata = await sock.groupMetadata(sender);
                 const mems = metadata.participants.map(p => p.id);
-                // Tag everyone for the reminder
-                await sock.sendMessage(sender, { text: `⏰ *PENGINGAT!!*\n\nJangan lupa ya:\n"${reminderMsg}"\n\n- Dari aku, Choli.`, mentions: mems });
+                await sock.sendMessage(sender, { text: `⏰ *PENGINGAT!!*\n\n"${reminderMsg}"\n\n- Dari aku, Neng Fika.`, mentions: mems });
             }, minutes * 60 * 1000);
             break;
 
         default:
-            // Unrecognized command
             break;
     }
 }
